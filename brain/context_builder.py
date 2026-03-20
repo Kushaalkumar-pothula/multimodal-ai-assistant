@@ -1,7 +1,9 @@
+from typing import Optional
+
 def build_context(
     user_input: str,
-    vision_data: str = None,
-    memory_data: str = None
+    vision_data: Optional[str] = None,
+    memory_data: Optional[str] = None
 ) -> str:
     """
     Build structured context for the AI assistant
