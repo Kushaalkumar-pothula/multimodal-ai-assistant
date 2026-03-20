@@ -31,9 +31,12 @@ def main():
         # Combine history into a single string
         history_text = "\n".join(conversation_history)
 
-        #Build context using history
-        context = build_context(history_text, vision_data, memory_data)
-
+        context = build_context(
+            user_input=user_input,
+            conversation_history=history_text,
+            vision_data=vision_data,
+            memory_data=memory_data
+        )
         # Build prompt
         prompt = build_prompt(context, instruction)
 
