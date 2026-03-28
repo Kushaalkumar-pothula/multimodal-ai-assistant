@@ -19,6 +19,7 @@ h11==0.16.0
 httpcore==1.0.9
 httplib2==0.31.2
 httpx==0.28.1
+huggingface_hub==0.35.3
 idna==3.11
 librosa==0.11.0
 mistral-common[audio]>=1.9.0

@@ -4,20 +4,29 @@ Multimodal AI assistant with vision, speech, memory and agent capabilities.
 
 ## Audio integration (Voxtral Mini 4B Realtime)
 
-This repository now includes a native audio transcription module at
-`speech/speech_to_text.py` using:
+This repository includes audio transcription via the Hugging Face Inference API:
 
 - Model: `mistralai/Voxtral-Mini-4B-Realtime-2602`
-- Runtime: `transformers` + `mistral-common[audio]`
+- Runtime: hosted inference (no local model weights required)
+- Auth: `HUGGINGFACE_API_KEY` (or `HF_TOKEN`)
 
 ### How audio is wired into the assistant pipeline
 
-1. `process_user_query(...)` now accepts:
+1. `process_user_query(...)` accepts:
    - `audio_data` (already-transcribed text), or
    - `audio_file_path` (local audio file path).
-2. If `audio_file_path` is provided without `audio_data`, the assistant auto-transcribes it with Voxtral.
-3. The transcript is added into the shared context as `Detected Audio Transcript`.
-4. The final LLM answer is generated from vision + audio + memory + chat context.
+2. If `audio_file_path` is provided without `audio_data`, the assistant calls Hugging Face Inference API to transcribe with Voxtral.
+3. The transcript is injected into context as `Detected Audio Transcript`.
+4. The final LLM answer is generated from vision + audio + memory + conversation context.
+
+### Environment variables
+
+Create a `.env` file with both keys used by this project:
+
+```bash
+GROQ_API_KEY=your_groq_key
+HUGGINGFACE_API_KEY=your_hf_key
+```
 
 ### Example usage
 
@@ -37,8 +46,8 @@ print(result["response"])
 
 ## Docker
 
-A `Dockerfile` is included and installs the system dependencies needed for audio
-processing (`ffmpeg`, `libsndfile1`) in addition to Python packages.
+A `Dockerfile` is included for a simple runnable environment. Since transcription is API-based,
+no local GPU model serving is required.
 
 Build and run:
 
@@ -46,5 +55,3 @@ Build and run:
 docker build -t multimodal-ai-assistant .
 docker run --rm -it --env-file .env multimodal-ai-assistant
 ```
-
-> Note: Voxtral model weights are downloaded at runtime on first use.

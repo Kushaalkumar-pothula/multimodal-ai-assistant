@@ -1,11 +1,17 @@
-"""Audio transcription utilities using Voxtral Mini 4B Realtime."""
+"""Audio transcription utilities using Hugging Face Inference API."""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
+from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
+
+
+load_dotenv()
 
 AudioPath = Union[str, Path]
 
@@ -19,87 +25,74 @@ class AudioTranscriptionResult:
 
 
 class VoxtralSpeechToText:
-    """Thin wrapper around Voxtral Mini 4B Realtime for transcription."""
+    """Wrapper around Voxtral Mini 4B Realtime via Hugging Face Inference API."""
 
     DEFAULT_MODEL_ID = "mistralai/Voxtral-Mini-4B-Realtime-2602"
 
-    def __init__(self, model_id: str = DEFAULT_MODEL_ID) -> None:
+    def __init__(
+        self,
+        model_id: str = DEFAULT_MODEL_ID,
+        api_key: Optional[str] = None,
+    ) -> None:
         self.model_id = model_id
-        self._processor = None
-        self._model = None
+        self.api_key = api_key or os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
 
-    def _lazy_load(self) -> None:
-        if self._processor is not None and self._model is not None:
-            return
+        if not self.api_key:
+            raise ValueError(
+                "Missing Hugging Face API key. Set `HUGGINGFACE_API_KEY` (or `HF_TOKEN`) in your environment."
+            )
 
-        try:
-            from transformers import AutoProcessor, VoxtralRealtimeForConditionalGeneration
-        except ImportError as exc:
-            raise ImportError(
-                "Voxtral dependencies are missing. Install `transformers>=5.2.0`, "
-                "`mistral-common[audio]`, and `torch` to enable audio transcription."
-            ) from exc
-
-        self._processor = AutoProcessor.from_pretrained(self.model_id)
-        self._model = VoxtralRealtimeForConditionalGeneration.from_pretrained(
-            self.model_id,
-            device_map="auto",
+        self.client = InferenceClient(
+            provider="hf-inference",
+            api_key=self.api_key,
         )
 
     def transcribe(self, audio_path: AudioPath, prompt: Optional[str] = None) -> AudioTranscriptionResult:
         """
-        Transcribe an audio file into text.
+        Transcribe an audio file into text using Hugging Face Inference API.
 
         Args:
             audio_path: Path to a local audio file.
-            prompt: Optional transcription instruction.
+            prompt: Optional prompt for models/providers that support prompting.
 
         Returns:
             AudioTranscriptionResult with extracted text.
         """
 
-        self._lazy_load()
+        normalized_path = Path(audio_path).expanduser().resolve()
 
-        from mistral_common.tokens.tokenizers.audio import Audio
+        if not normalized_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {normalized_path}")
 
-        instruction = prompt or "Transcribe this audio as accurately as possible."
-        normalized_path = str(Path(audio_path).expanduser().resolve())
+        # `automatic_speech_recognition` accepts bytes/path depending on client version.
+        # We pass bytes for compatibility and explicitness.
+        with normalized_path.open("rb") as audio_file:
+            audio_bytes = audio_file.read()
 
-        conversation = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "audio",
-                        "audio": Audio(url=normalized_path),
-                    },
-                    {
-                        "type": "text",
-                        "text": instruction,
-                    },
-                ],
-            }
-        ]
-
-        inputs = self._processor.apply_chat_template(
-            conversation,
-            return_tensors="pt",
-            truncation=True,
-        ).to(self._model.device)
-
-        outputs = self._model.generate(
-            **inputs,
-            max_new_tokens=256,
-            temperature=0.0,
-            do_sample=False,
+        response = self.client.automatic_speech_recognition(
+            audio=audio_bytes,
+            model=self.model_id,
+            extra_body={"prompt": prompt} if prompt else None,
         )
 
-        text = self._processor.batch_decode(
-            outputs,
-            skip_special_tokens=True,
-        )[0].strip()
+        text = _extract_transcription_text(response)
 
         return AudioTranscriptionResult(text=text, model_id=self.model_id)
+
+
+def _extract_transcription_text(response: object) -> str:
+    """Normalizes Inference API output into a plain transcript string."""
+
+    if isinstance(response, str):
+        return response.strip()
+
+    if isinstance(response, dict):
+        if "text" in response and isinstance(response["text"], str):
+            return response["text"].strip()
+        if "generated_text" in response and isinstance(response["generated_text"], str):
+            return response["generated_text"].strip()
+
+    raise ValueError(f"Unexpected transcription response format: {response}")
 
 
 def transcribe_audio_file(audio_path: AudioPath, prompt: Optional[str] = None) -> str:
